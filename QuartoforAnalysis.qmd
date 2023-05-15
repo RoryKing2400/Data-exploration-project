@@ -1,0 +1,117 @@
+---
+title: "AnalysisPart"
+format: html
+editor: visual
+---
+
+## Analysis of Data Exploration Project
+
+Loading in librarys
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(rio)
+library(stringr)
+library(ggplot2)
+library(fixest)
+
+```
+
+```{r}
+setwd("C:/Users/rking/OneDrive/Documents/Econometrics/Data exploration project/Data_Exploration_Rawdata/")
+CData <- import('final_data.xlsx')
+```
+
+In order to explore the earnings I need to remove the privacy secured ones and NULL's
+
+```{r}
+CData2 <- rename(CData, earnings = 'md_earn_wne_p10-reported-earnings')
+
+
+CData2 <- CData2 %>%
+  filter(!str_detect(earnings, "PrivacySuppressed|NULL"))
+
+```
+
+Trying to identify what high earning and low earning will be defined at
+
+```{r}
+# Looking for mean and SD of income
+
+CData4 <- as.integer(CData2$earnings)
+mean(CData4, na.rm = TRUE)
+sd(CData4, na.rm = TRUE)
+
+
+```
+
+```{r}
+# Making categories for earning level
+CData2 <- CData2 %>%
+  mutate(earning_level  = case_when(
+    earnings <= 33200 ~ 'low',
+    earnings >= 56800 ~ 'high',
+    TRUE ~ 'Medium'
+  ))
+
+```
+
+Making date groups, between before and after the scorecard was introduced
+
+```{r}
+#was introduced on 09/01/2015
+CData2 <- CData2 %>%
+  mutate(SCEffect  = case_when(
+    monthorweek <= '2015-09-01' ~ 'before',
+    earnings > '2015-09-01' ~ 'after'
+  ))
+
+#Filtering how meduim earning schools and NA's
+
+highvlow <- filter(CData2, earning_level != 'Medium')
+highvlow <- na.omit(highvlow)
+```
+
+```{r}
+highvlow2 <- highvlow %>% group_by(SCEffect, earning_level, monthorweek) %>%
+  summarize(mean_index = mean(new_index))
+
+# can make a final df for the model and visual by selecting only the columns u need 
+
+```
+
+```{r}
+
+ggplot(data = highvlow2, aes(x=monthorweek, y = mean_index, color= earning_level)) + geom_line() + labs(x = "Year", y = "Average Index", color = "Earning Level")
+```
+
+Creating binary variables for my regression
+
+```{r}
+regData <- highvlow %>% 
+  mutate(high_earners = ifelse(earning_level == "high", 1, 0),
+         low_earners = ifelse(earning_level == "low", 1, 0))
+
+regData <- regData %>% 
+  mutate(screlease = ifelse(monthorweek < '2015-09-01', 0, 1))
+```
+
+Running the regression
+
+```{r}
+
+reggg <- feols(new_index ~ high_earners : screlease + low_earners : screlease + monthorweek + locale , data = regData)
+etable(reggg)
+```
+
+**The write-up:**
+
+With such a large amount of data I decided to group the aggregated index by month so that I had a month-to-month scale for change in index because I though having week by week would be harder to see on a chart. In order to create my groups for earning levels I took the mean income of the entire df and it was \$42,804, then the mean income between 2013 and 2016 according to the "Social Security Administration" was \$47,028. Looking at these two numbers I chose to use \$45,000 as the true average of incomes. I took the standard deviation and that was \$11,800 and I used this to determine my high and low earning groups. The low earning group will be one SD below the mean (\$33,200) and the high earning group will be one SD above (\$56,800).
+
+When starting this analysis I wanted to get a look at how the data was so that when I ran my regression I could have a sense of if I was on the right track or not. I decided to group by earning level and the monthorweek variable so that I could get averages for the index scores based on the month and earning level. Putting this on a line graph was very helpful since I could see the changes over time and the potential effects that the score card had. The main find that I had from this visual was that after the score card was introduced both index's did their usual drop but high earning colleges made a sharper rebound than the lower earning colleges.
+
+In order to make the regression I decided to change my data frame a little bit and add binary variables because they are very effective in comparing means. My regression model had both "high_earners : screlease" and low_earners : screlease, because I really only wanted to get the interaction between the two of them, because this would show me the true difference in high and low earners before and after the scorecard. When adding control variables I added the date because every year economic swings happen so I didn't want that alter my results, then I added locale as well, because this is a measure of population of the city that the school is in and that could cause a positive bias for schools that are in bigger cities. I tried controlling for school size as well, but when I did it dropped the adjusted R Squared significantly so I decided to leave it out of my final model.
+
+We can say that there is a statistically significant relationship between high and low earning groups and the release of the college scorecard because both interactions are significant at the 0.001 significance level. When comparing the two interactions, we can see that with a one unit increase of scorecard there is a 0.1003 unit increase to high earning colleges being searched and with a one unit increase of scorecard there is a 0.0695 unit increase on low earning colleges being searched, so long as all variables listed in the controls are contolled. This means that the introduction of the college scorecard did positively shift interest to high earning colleges.

@@ -1,0 +1,103 @@
+---
+title: "DataCleaningwithQ"
+format: html
+editor: visual
+---
+
+## Quarto
+
+## Running Code
+
+Needed packages:
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(rio)
+library(writexl)
+setwd("C:/Users/rking/OneDrive/Documents/Econometrics/Data exploration project/Data_Exploration_Rawdata/")
+```
+
+Loading and joining in the trends data
+
+```{r}
+file.list= list.files('Lab3_Rawdata', pattern = "trends_up_to", full.names = "TRUE")
+dat <- import_list(file.list, rbind = TRUE, fill = TRUE)
+
+```
+
+Changing the dates so that I can aggregate by month
+
+```{r}
+dat <- dat %>% mutate(monthorweek = str_sub(monthorweek, 1, 10))
+
+
+dat <- dat%>% mutate(monthorweek = ymd(monthorweek))
+
+dat_month <- dat %>% mutate(monthorweek = floor_date(monthorweek, unit = "month"))
+
+```
+
+Standardizing the indexs by school and keyword to get them all on the same scale
+
+```{r}
+standard_df <- dat_month %>%
+  group_by(schname, keyword)%>%
+  mutate(stan_index = (index- mean(index))/sd(index))
+
+#removing NA's from the data frame
+noNAs <- na.omit(standard_df)
+```
+
+Aggregating standarized indexs to a school-month level
+
+```{r}
+lld <- noNAs %>% group_by(schname, monthorweek) %>%
+  summarise(new_index = mean(stan_index))
+
+#llde <- dat_month %>% group_by(monthorweek, keyword) %>%
+ # mutate(index = mean(index))
+```
+
+Importing the scorecard data and ID name link
+
+```{r}
+scorecard <- import('Scorecard.csv')
+id_link <- import('id_name_link.csv')
+#making scorecards column names lower cased
+names(scorecard) <- tolower(names(scorecard))
+
+#filtering for only bachleors degrees 
+
+scorecard <- filter(scorecard, preddeg==3)
+
+```
+
+Getting rid of duplicate schools
+
+```{r}
+id_link <- id_link %>% group_by(schname) %>%
+  mutate(n=n())
+
+#filtering them out
+
+filtered_id <- filter(id_link, n==1)
+```
+
+Joining the three
+
+```{r}
+ 
+id_trends <- inner_join(lld, filtered_id)
+
+#now joining those to the scorecard
+
+final_piece <- inner_join(id_trends, scorecard, by = 'unitid')
+```
+
+Writing my clean df to an excel doc to use for analysis
+
+```{r}
+write_xlsx(final_piece, "final_data.xlsx")
+```
